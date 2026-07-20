@@ -332,7 +332,8 @@ function startMonitor() {
       const isRunning = execSync(`tasklist /fi "imagename eq ${procName}.exe" /fo csv /nh`, { encoding: 'utf-8' })
         .toLowerCase().includes(procName.toLowerCase());
       if (isRunning && !b.wasActive) {
-        preBindPreset = currentActivePreset;
+        // Only capture restore target for the FIRST binding that fires
+        if (preBindPreset === null) preBindPreset = currentActivePreset;
         const p = loadPresets()[b.presetName];
         if (p) {
           applyGamma(p.rg, p.rb, p.rc, p.gg, p.gb, p.gc, p.bg, p.bb, p.bc);
@@ -358,6 +359,8 @@ function startMonitor() {
             preBindPreset = null;
           } else {
             resetGamma();
+            setDVC(50); lastDVC = 50;
+            setHUE(0); lastHUE = 0;
             lastGammaParams = null;
             currentActivePreset = null;
           }
@@ -482,6 +485,7 @@ ipcMain.handle('save-bindings', (_, newBindings) => {
   return bindings;
 });
 ipcMain.handle('set-bind-enabled', (_, enabled) => { bindEnabled = enabled; });
+ipcMain.handle('set-active-preset', (_, name) => { currentActivePreset = name; });
 ipcMain.handle('window-minimize', () => win.minimize());
 ipcMain.handle('window-close', () => { win.hide(); });
 ipcMain.handle('browse-exe', async () => {

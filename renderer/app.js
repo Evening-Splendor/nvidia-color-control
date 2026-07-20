@@ -222,6 +222,7 @@ function loadPresetToSliders(name) {
   var p = presets[name];
   if (!p) return;
   currentPreset = name;
+  nvidiaAPI.notifyActivePreset(name);
   ch.rg = p.rg; ch.rb = p.rb; ch.rc = p.rc;
   ch.gg = p.gg; ch.gb = p.gb; ch.gc = p.gc;
   ch.bg = p.bg; ch.bb = p.bb; ch.bc = p.bc;
@@ -263,11 +264,14 @@ async function resetAll() {
   nvidiaAPI.setHUE(0);
   document.getElementById('preset-select').selectedIndex = 0;
   currentPreset = 'default';
+  nvidiaAPI.notifyActivePreset('default');
   setStatus('已恢复默认');
 }
 
 function setAllDefaults() {
   ch = { rg:1, rb:100, rc:100, gg:1, gb:100, gc:100, bg:1, bb:100, bc:100, dvc:50, hue:0 };
+  currentPreset = 'default';
+  nvidiaAPI.notifyActivePreset('default');
   updateSlidersForChannel();
   updateChannelPreview();
 }
