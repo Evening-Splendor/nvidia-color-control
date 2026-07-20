@@ -349,6 +349,8 @@ let win = null;
 let tray = null;
 
 function createWindow() {
+  const iconPath = path.join(__dirname, 'assets', 'icon.ico');
+  const appIcon = nativeImage.createFromPath(iconPath);
   win = new BrowserWindow({
     width: 720,
     height: 680,
@@ -358,6 +360,7 @@ function createWindow() {
     transparent: true,
     backgroundColor: '#00000000',
     resizable: true,
+    icon: appIcon.isEmpty() ? undefined : appIcon,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -374,15 +377,10 @@ function createWindow() {
   });
 }
 
-async function createTray() {
-  // 托盘图标用任务栏的图标 — get the app exe icon (same as taskbar)
-  let trayIcon;
-  try {
-    trayIcon = await app.getFileIcon(app.getPath('exe'));
-  } catch {
-    trayIcon = nativeImage.createEmpty();
-  }
-  tray = new Tray(trayIcon);
+function createTray() {
+  const iconPath = path.join(__dirname, 'assets', 'tray_icon.png');
+  const trayIcon = nativeImage.createFromPath(iconPath);
+  tray = new Tray(trayIcon.isEmpty() ? nativeImage.createEmpty() : trayIcon);
   tray.setToolTip('NVIDIA 色彩控制');
   const menu = Menu.buildFromTemplate([
     { label: '显示主窗口', click: () => { win.show(); win.focus(); } },
@@ -495,9 +493,9 @@ ipcMain.handle('set-setting', (_, key, value) => {
 // --------------- App Lifecycle ---------------
 app.setLoginItemSettings({ openAtLogin: false }); // 默认关闭，用户可选
 
-app.whenReady().then(async () => {
+app.whenReady().then(() => {
   createWindow();
-  await createTray();
+  createTray();
   startMonitor();
 });
 

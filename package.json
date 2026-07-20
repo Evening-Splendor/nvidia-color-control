@@ -22,7 +22,7 @@
     ],
     "win": {
       "target": "portable",
-      "icon": "assets/icon.png"
+      "icon": "assets/icon.ico"
     }
   },
   "devDependencies": {
@@ -30,6 +30,7 @@
     "electron-builder": "^26.15.3"
   },
   "dependencies": {
-    "koffi": "^2.9.0"
+    "koffi": "^2.9.0",
+    "png-to-ico": "^3.0.2"
   }
 }
