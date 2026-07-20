@@ -2,6 +2,10 @@ node_modules/
 dist/
 *.exe
 *.log
+stdout.txt
+stderr.txt
+test_out.txt
+test_err.txt
 .env
 .DS_Store
 Thumbs.db
