@@ -18,9 +18,8 @@ const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
 
-// --------------- koffi FFI ---------------
-let koffi;
-try { koffi = require('koffi'); } catch { console.warn('koffi not loaded'); }
+// --------------- koffi FFI (lazy init) ---------------
+let koffi = null;
 
 // GDI32
 let GetDC, ReleaseDC, SetDeviceGammaRamp, GetDeviceGammaRamp;
@@ -32,6 +31,7 @@ let NvAPI_GetDVCInfo, NvAPI_SetDVCLevel, NvAPI_GetHUEInfo, NvAPI_SetHUEAngle;
 
 // NVAPI+GDI32 延迟初始化（加速启动）
 function initHardware() {
+  try { koffi = require('koffi'); } catch { return; }
 if (koffi) {
   // ---- GDI32 Gamma Ramp (always available) ----
   try {
@@ -514,10 +514,14 @@ app.setLoginItemSettings({ openAtLogin: false }); // 默认关闭，用户可选
 app.whenReady().then(() => {
   createWindow();
   createTray();
-  // 窗口先显示，再初始化硬件
-  initHardware();
-  if (win) win.webContents.send('status', nvapiReady ? 'NVAPI 已连接 - 直接控制显卡' : '使用 GDI32 伽马通道（NVAPI 未就绪）');
-  startMonitor();
+  // 等窗口渲染完成后再初始化硬件，避免阻塞 UI
+  win.webContents.once('did-finish-load', () => {
+    setTimeout(() => {
+      initHardware();
+      if (win) win.webContents.send('status', nvapiReady ? 'NVAPI 已连接 - 直接控制显卡' : '使用 GDI32 伽马通道（NVAPI 未就绪）');
+      startMonitor();
+    }, 0);
+  });
 });
 
 app.on('window-all-closed', () => {});
