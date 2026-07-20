@@ -1,0 +1,35 @@
+{
+  "name": "nvidia-color-control",
+  "version": "2.0.0",
+  "description": "NVIDIA GPU Color Channel Control - Modern Electron UI",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.nvidia.colorcontrol",
+    "productName": "NVIDIA Color Control",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**",
+      "assets/**",
+      "node_modules/**"
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "assets/icon.png"
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "koffi": "^2.9.0"
+  }
+}

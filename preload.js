@@ -1,0 +1,26 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('nvidiaAPI', {
+  applyGamma: (params) => ipcRenderer.invoke('apply-gamma', params),
+  resetGamma: () => ipcRenderer.invoke('reset-gamma'),
+  getPresets: () => ipcRenderer.invoke('get-presets'),
+  savePreset: (name, preset) => ipcRenderer.invoke('save-preset', name, preset),
+  deletePreset: (name) => ipcRenderer.invoke('delete-preset', name),
+  getDVC: () => ipcRenderer.invoke('get-dvc'),
+  setDVC: (level) => ipcRenderer.invoke('set-dvc', level),
+  getHUE: () => ipcRenderer.invoke('get-hue'),
+  setHUE: (angle) => ipcRenderer.invoke('set-hue', angle),
+  getBindings: () => ipcRenderer.invoke('get-bindings'),
+  saveBindings: (b) => ipcRenderer.invoke('save-bindings', b),
+  minimizeWindow: () => ipcRenderer.invoke('window-minimize'),
+  closeWindow: () => ipcRenderer.invoke('window-close'),
+  browseExe: () => ipcRenderer.invoke('browse-exe'),
+  setBindEnabled: (enabled) => ipcRenderer.invoke('set-bind-enabled', enabled),
+  getAutostart: () => ipcRenderer.invoke('get-autostart'),
+  setAutostart: (enabled) => ipcRenderer.invoke('set-autostart', enabled),
+  getSetting: (key) => ipcRenderer.invoke('get-setting', key),
+  setSetting: (key, value) => ipcRenderer.invoke('set-setting', key, value),
+  onStatus: (cb) => ipcRenderer.on('status', (_, msg) => cb(msg)),
+  onApplyPreset: (cb) => ipcRenderer.on('apply-preset', (_, name) => cb(name)),
+  onReset: (cb) => ipcRenderer.on('reset', () => cb()),
+});

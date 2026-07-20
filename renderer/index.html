@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NVIDIA 色彩通道控制台</title>
+<style>
+  :root {
+    --bg: #0f0f14;
+    --surface: #1a1a24;
+    --surface2: #222230;
+    --surface3: #282838;
+    --border: #2a2a3a;
+    --text: #e0e0ea;
+    --text2: #9090a8;
+    --accent: #6366f1;
+    --accent2: #818cf8;
+    --red: #f43f5e;
+    --green: #22c55e;
+    --blue: #3b82f6;
+    --red-dim: #3e1a2a;
+    --green-dim: #1a2e1e;
+    --blue-dim: #1a2640;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh; overflow: hidden;
+    user-select: none;
+    -webkit-app-region: drag;
+  }
+  .titlebar {
+    height: 38px; background: var(--surface);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 12px; border-bottom: 1px solid var(--border);
+    -webkit-app-region: drag;
+  }
+  .titlebar .title { font-size: 13px; font-weight: 600; color: var(--text2); letter-spacing: 0.5px; }
+  .titlebar .actions { display: flex; gap: 8px; -webkit-app-region: no-drag; }
+  .titlebar .actions button {
+    width: 14px; height: 14px; border-radius: 50%; border: none;
+    cursor: pointer; transition: var(--transition);
+  }
+  .btn-min { background: #facc15; } .btn-min:hover { background: #fde047; }
+  .btn-close { background: #ef4444; } .btn-close:hover { background: #f87171; }
+
+  .main-content {
+    height: calc(100vh - 38px); display: flex; flex-direction: column;
+    overflow-y: auto; padding: 16px 20px; -webkit-app-region: no-drag;
+  }
+
+  .tabs {
+    display: flex; gap: 2px; margin-bottom: 16px;
+    background: var(--surface2); border-radius: var(--radius); padding: 3px;
+  }
+  .tab {
+    flex: 1; padding: 8px 16px; text-align: center; font-size: 13px;
+    font-weight: 500; border-radius: var(--radius-sm); cursor: pointer;
+    transition: var(--transition); color: var(--text2);
+  }
+  .tab.active { background: var(--surface3); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+  .tab:hover:not(.active) { color: var(--text); }
+  .tab-content { display: none; flex: 1; flex-direction: column; gap: 12px; }
+  .tab-content.active { display: flex; }
+
+  .channel-selector {
+    display: flex; gap: 2px; background: var(--surface2);
+    border-radius: var(--radius); padding: 3px;
+  }
+  .ch-btn {
+    flex: 1; padding: 10px 8px; text-align: center; font-size: 13px;
+    font-weight: 500; border-radius: var(--radius-sm); cursor: pointer;
+    transition: var(--transition); color: var(--text2);
+    border: none; background: none; font-family: inherit;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .ch-btn .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .ch-btn .dot.all { background: conic-gradient(var(--red) 0deg 120deg, var(--green) 120deg 240deg, var(--blue) 240deg 360deg)); }
+  .ch-btn .dot.red { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .ch-btn .dot.green { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .ch-btn .dot.blue { background: var(--blue); box-shadow: 0 0 6px var(--blue); }
+  .ch-btn.active { background: var(--surface3); color: var(--text); }
+  .ch-btn:hover:not(.active) { color: var(--text); }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px;
+  }
+  .slider-group {
+    display: grid;
+    grid-template-columns: 100px 1fr 55px 42px;
+    align-items: center; gap: 10px; padding: 7px 0;
+  }
+  .slider-group .label { font-size: 13px; color: var(--text2); font-weight: 500; }
+  .slider-group .value {
+    font-size: 13px; text-align: right; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    font-family: "SF Mono", "Consolas", monospace;
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none; width: 100%; height: 5px;
+    border-radius: 3px; background: var(--surface3); outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 18px; height: 18px;
+    border-radius: 50%; background: var(--text); cursor: pointer;
+    border: 2px solid var(--surface); transition: var(--transition);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  }
+  input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
+  .slider-all::-webkit-slider-thumb { background: var(--accent); }
+  .slider-red::-webkit-slider-thumb { background: var(--red); }
+  .slider-green::-webkit-slider-thumb { background: var(--green); }
+  .slider-blue::-webkit-slider-thumb { background: var(--blue); }
+
+  .ch-preview {
+    display: flex; gap: 4px; margin-top: 10px; padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+  .ch-pv {
+    flex: 1; font-size: 11px; color: var(--text2);
+    text-align: center; padding: 6px 4px;
+    background: var(--surface2); border-radius: var(--radius-sm);
+  }
+  .ch-pv .pv-val { font-size: 14px; font-weight: 600; margin-top: 2px; }
+  .ch-pv .pv-val.red { color: var(--red); }
+  .ch-pv .pv-val.green { color: var(--green); }
+  .ch-pv .pv-val.blue { color: var(--blue); }
+
+  .btn {
+    padding: 6px 14px; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); background: var(--surface2);
+    color: var(--text); font-size: 12px; cursor: pointer;
+    transition: var(--transition); font-family: inherit;
+  }
+  .btn:hover { background: var(--surface3); border-color: #444; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); }
+  .btn.primary:hover { background: var(--accent2); }
+  .btn.danger { color: var(--red); }
+  .btn.danger:hover { background: var(--red-dim); border-color: var(--red); }
+  .btn.sm { padding: 3px 8px; font-size: 11px; }
+  .btn-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+  .preset-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  select {
+    background: var(--surface2); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 6px 10px; font-size: 13px; font-family: inherit;
+    cursor: pointer; min-width: 140px;
+  }
+  select:focus { outline: none; border-color: var(--accent); }
+
+  .checkbox-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text2); }
+  input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; }
+
+  .setting-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 0;
+  }
+  .setting-row + .setting-row { border-top: 1px solid var(--border); }
+  .setting-info { display: flex; flex-direction: column; gap: 2px; }
+  .setting-info .setting-label { font-size: 13px; font-weight: 500; }
+  .setting-info .setting-desc { font-size: 11px; color: var(--text2); }
+
+  .bind-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  .bind-table th { text-align: left; padding: 6px 8px; color: var(--text2); font-weight: 500; border-bottom: 1px solid var(--border); }
+  .bind-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  .bind-table tr:hover td { background: var(--surface2); }
+  input[type="text"], .path-input {
+    background: var(--surface2); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 6px 10px; font-size: 12px; font-family: inherit; flex: 1; min-width: 0;
+  }
+  input[type="text"]:focus { outline: none; border-color: var(--accent); }
+
+  .status-bar {
+    font-size: 11px; color: var(--text2); padding: 8px 0 0;
+    border-top: 1px solid var(--border); margin-top: auto;
+  }
+  .status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 6px; }
+  .status-dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .status-dot.off { background: var(--text2); }
+
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .modal-overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.6); display: none;
+    align-items: center; justify-content: center; z-index: 100;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 24px; min-width: 320px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .modal h3 { font-size: 15px; margin-bottom: 16px; }
+  .modal .input-group { margin-bottom: 12px; }
+  .modal .input-group label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<div class="titlebar">
+  <span class="title">NVIDIA 色彩通道控制台</span>
+  <div class="actions">
+    <button class="btn-min" onclick="nvidiaAPI.minimizeWindow()" title="最小化"></button>
+    <button class="btn-close" onclick="nvidiaAPI.closeWindow()" title="关闭"></button>
+  </div>
+</div>
+
+<div class="main-content">
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('color')">🎨 色彩调节</div>
+    <div class="tab" onclick="switchTab('bind')">🔗 程序绑定</div>
+    <div class="tab" onclick="switchTab('settings')">⚙️ 设置</div>
+  </div>
+
+  <!-- ==================== Color Tab ==================== -->
+  <div id="tab-color" class="tab-content active">
+    <div class="preset-row">
+      <select id="preset-select" onchange="onPresetSelect()"></select>
+      <button class="btn primary" onclick="applyPreset()">应用</button>
+      <button class="btn" onclick="showSaveModal()">💾 保存方案</button>
+      <button class="btn danger" onclick="deletePreset()">删除</button>
+      <button class="btn" onclick="resetAll()">↺ 恢复默认</button>
+      <div class="checkbox-row" style="margin-left:auto">
+        <input type="checkbox" id="realtime" checked>
+        <span>实时预览</span>
+      </div>
+    </div>
+
+    <div class="channel-selector" id="channel-selector">
+      <button class="ch-btn active" data-ch="all"><span class="dot all"></span> 所有通道</button>
+      <button class="ch-btn" data-ch="red"><span class="dot red"></span> 红色</button>
+      <button class="ch-btn" data-ch="green"><span class="dot green"></span> 绿色</button>
+      <button class="ch-btn" data-ch="blue"><span class="dot blue"></span> 蓝色</button>
+    </div>
+
+    <div class="card" id="slider-card">
+      <div class="slider-group">
+        <span class="label">亮度 Brightness</span>
+        <input type="range" class="slider-all" id="slider-bri" min="80" max="120" step="1" value="100" oninput="onSlider('bri')">
+        <span class="value" id="val-bri">100</span>
+        <button class="btn sm" onclick="resetSlider('bri')">归零</button>
+      </div>
+      <div class="slider-group">
+        <span class="label">对比度 Contrast</span>
+        <input type="range" class="slider-all" id="slider-con" min="80" max="120" step="1" value="100" oninput="onSlider('con')">
+        <span class="value" id="val-con">100</span>
+        <button class="btn sm" onclick="resetSlider('con')">归零</button>
+      </div>
+      <div class="slider-group">
+        <span class="label">灰度 Gamma</span>
+        <input type="range" class="slider-all" id="slider-gamma" min="0.30" max="2.80" step="0.01" value="1.00" oninput="onSlider('gamma')">
+        <span class="value" id="val-gamma">1.00</span>
+        <button class="btn sm" onclick="resetSlider('gamma')">归零</button>
+      </div>
+      <div class="slider-group">
+        <span class="label">数字亮丽 DVC</span>
+        <input type="range" class="slider-all" id="slider-dvc" min="0" max="100" step="1" value="50" oninput="onSlider('dvc')">
+        <span class="value" id="val-dvc">50%</span>
+        <button class="btn sm" onclick="resetSlider('dvc')">归零</button>
+      </div>
+      <div class="slider-group">
+        <span class="label">色调 Hue</span>
+        <input type="range" class="slider-all" id="slider-hue" min="0" max="359" step="1" value="0" oninput="onSlider('hue')">
+        <span class="value" id="val-hue">0°</span>
+        <button class="btn sm" onclick="resetSlider('hue')">归零</button>
+      </div>
+
+      <div class="ch-preview">
+        <div class="ch-pv"><span>🔴 红</span><div class="pv-val red" id="pv-red">1.00 / 100 / 100</div></div>
+        <div class="ch-pv"><span>🟢 绿</span><div class="pv-val green" id="pv-green">1.00 / 100 / 100</div></div>
+        <div class="ch-pv"><span>🔵 蓝</span><div class="pv-val blue" id="pv-blue">1.00 / 100 / 100</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== Bind Tab ==================== -->
+  <div id="tab-bind" class="tab-content">
+    <div class="card">
+      <div class="btn-row" style="margin-bottom:10px">
+        <input type="text" id="bind-path" class="path-input" placeholder="程序路径，例如 C:\Games\Apex\r5apex.exe">
+        <button class="btn sm" onclick="browseExe()">浏览...</button>
+        <select id="bind-preset-select" style="min-width:100px"></select>
+        <button class="btn primary sm" onclick="addBinding()">+ 添加绑定</button>
+        <div class="checkbox-row">
+          <input type="checkbox" id="bind-enabled" checked onchange="toggleBindMonitor()">
+          <span>启用监控</span>
+        </div>
+      </div>
+      <table class="bind-table" id="bind-table">
+        <thead><tr><th></th><th>程序</th><th>路径</th><th>预设</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="status-bar" style="margin-top:8px">
+      <span class="status-dot on"></span><span id="bind-status">监控中 - 等待绑定程序启动</span>
+    </div>
+  </div>
+
+  <!-- ==================== Settings Tab ==================== -->
+  <div id="tab-settings" class="tab-content">
+    <div class="card">
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-label">开机自启动</span>
+          <span class="setting-desc">系统启动时自动运行 NVIDIA 色彩控制台</span>
+        </div>
+        <input type="checkbox" id="autostart-chk" onchange="toggleAutostart()">
+      </div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-label">关闭到系统托盘</span>
+          <span class="setting-desc">关闭窗口时最小化到托盘而不是退出程序</span>
+        </div>
+        <input type="checkbox" id="tray-chk" checked onchange="toggleMinimizeToTray()">
+      </div>
+    </div>
+    <div class="status-bar" style="margin-top:8px">
+      <span class="status-dot on"></span>
+      <span id="settings-status">NVAPI 直接显卡控制已就绪</span>
+    </div>
+  </div>
+
+  <!-- Main Status -->
+  <div class="status-bar" style="margin-top:auto" id="main-status">
+    <span class="status-dot on"></span> 就绪
+  </div>
+</div>
+
+<!-- Save Modal -->
+<div class="modal-overlay" id="save-modal">
+  <div class="modal">
+    <h3>💾 保存自定义方案</h3>
+    <div class="input-group">
+      <label>方案名称</label>
+      <input type="text" id="save-name" placeholder="例如: 我的游戏模式">
+    </div>
+    <div class="input-group">
+      <label>方案描述</label>
+      <input type="text" id="save-desc" placeholder="例如: 高锐度、暗部增强">
+    </div>
+    <div class="btn-row" style="justify-content:flex-end">
+      <button class="btn" onclick="closeSaveModal()">取消</button>
+      <button class="btn primary" onclick="doSavePreset()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
