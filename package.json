@@ -18,7 +18,17 @@
       "preload.js",
       "renderer/**",
       "assets/**",
-      "node_modules/**"
+      "node_modules/**",
+      "!node_modules/koffi/doc/**",
+      "!node_modules/koffi/src/**",
+      "!node_modules/koffi/build/koffi/darwin*/**",
+      "!node_modules/koffi/build/koffi/freebsd*/**",
+      "!node_modules/koffi/build/koffi/linux*/**",
+      "!node_modules/koffi/build/koffi/musl*/**",
+      "!node_modules/koffi/build/koffi/openbsd*/**",
+      "!node_modules/koffi/build/koffi/win32_ia32/**",
+      "!node_modules/koffi/build/koffi/win32_arm64/**",
+      "!node_modules/png-to-ico/node_modules/**"
     ],
     "win": {
       "target": "portable",
@@ -26,7 +36,7 @@
     }
   },
   "devDependencies": {
-    "electron": "^33.0.0",
+    "electron": "33.4.0",
     "electron-builder": "^26.15.3"
   },
   "dependencies": {
