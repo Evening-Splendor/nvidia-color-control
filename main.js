@@ -1,5 +1,12 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog } = require('electron');
 
+// ---- NVIDIA GPU 硬件加速 ----
+app.commandLine.appendSwitch('use-gl', 'angle');
+app.commandLine.appendSwitch('use-angle', 'd3d11');
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-zero-copy');
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+
 // 单实例锁 — 必须在最前面
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
@@ -514,14 +521,12 @@ app.setLoginItemSettings({ openAtLogin: false }); // 默认关闭，用户可选
 app.whenReady().then(() => {
   createWindow();
   createTray();
-  // 等窗口渲染完成后再初始化硬件，避免阻塞 UI
-  win.webContents.once('did-finish-load', () => {
-    setTimeout(() => {
-      initHardware();
-      if (win) win.webContents.send('status', nvapiReady ? 'NVAPI 已连接 - 直接控制显卡' : '使用 GDI32 伽马通道（NVAPI 未就绪）');
-      startMonitor();
-    }, 0);
-  });
+  // 让出主线程先渲染窗口，再加载 NVAPI/驱动
+  setTimeout(() => {
+    initHardware();
+    if (win) win.webContents.send('status', nvapiReady ? 'NVAPI 已连接 - 直接控制显卡' : '使用 GDI32 伽马通道（NVAPI 未就绪）');
+    startMonitor();
+  }, 50);
 });
 
 app.on('window-all-closed', () => {});
