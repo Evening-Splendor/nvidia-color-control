@@ -32,6 +32,7 @@
     ],
     "win": {
       "target": "portable",
+      "signAndEditExecutable": false,
       "icon": "assets/icon.ico"
     }
   },
