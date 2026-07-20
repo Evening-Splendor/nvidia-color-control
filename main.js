@@ -29,7 +29,7 @@ const { execSync } = require('child_process');
 let koffi = null;
 
 // GDI32
-let GetDC, ReleaseDC, SetDeviceGammaRamp, GetDeviceGammaRamp;
+let GetDC, ReleaseDC, SetDeviceGammaRamp, GetDeviceGammaRamp, GetForegroundWindow, GetWindowThreadProcessId;
 
 // NVAPI (via QueryInterface) — working pattern: koffi.decode(QI(id), koffi.proto(sig))
 let nvapiReady = false;
@@ -53,7 +53,11 @@ if (koffi) {
     });
     SetDeviceGammaRamp = gdi32.func('__stdcall', 'SetDeviceGammaRamp', 'bool', ['void*', koffi.pointer(RAMP)]);
     GetDeviceGammaRamp = gdi32.func('__stdcall', 'GetDeviceGammaRamp', 'bool', ['void*', koffi.out(koffi.pointer(RAMP))]);
-    console.log('[GDI32] Gamma ramp loaded');
+    // Foreground detection — GetForegroundWindow + GetWindowThreadProcessId
+    GetForegroundWindow = user32.func('__stdcall', 'GetForegroundWindow', 'void*', []);
+    const kernel32 = koffi.load('kernel32.dll');
+    GetWindowThreadProcessId = user32.func('__stdcall', 'GetWindowThreadProcessId', 'uint32', ['void*', koffi.out('uint32*')]);
+    console.log('[GDI32] Gamma ramp + foreground detection loaded');
   } catch (e) { console.error('[GDI32] Load error:', e.message); }
 
   // ---- NVAPI via QueryInterface (working koffi.decode pattern) ----
@@ -180,6 +184,33 @@ function applyGamma(rg, rb, rc, gg, gb, gc, bg, bb, bc) {
   } catch (e) { console.error('[Gamma] Error:', e.message); return false; }
 }
 
+// Foreground window PID
+function getForegroundPid() {
+  if (!GetForegroundWindow || !GetWindowThreadProcessId) return 0;
+  try {
+    const hwnd = GetForegroundWindow();
+    if (!hwnd) return 0;
+    let pid = [0];
+    GetWindowThreadProcessId(hwnd, pid);
+    return pid[0];
+  } catch (e) { return 0; }
+}
+
+// Get all PIDs for a process by name (via tasklist)
+function getProcPids(procName) {
+  try {
+    const output = execSync(`tasklist /fi "imagename eq ${procName}.exe" /fo csv /nh`, { encoding: 'utf-8' });
+    const pids = [];
+    const re = new RegExp('"' + procName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\.exe","(\\d+)"', 'i');
+    const lines = output.split('\n');
+    for (const line of lines) {
+      const m = line.match(re);
+      if (m) pids.push(parseInt(m[1]));
+    }
+    return pids;
+  } catch (e) { return []; }
+}
+
 function resetGamma() {
   if (!SetDeviceGammaRamp) return false;
   try {
@@ -269,10 +300,9 @@ function saveBindingsFile(bindings) {
   fs.writeFileSync(bindingsPath, JSON.stringify(bindings, null, 2));
 }
 
-// --------------- Process Monitor ---------------
+// --------------- Unified Monitor (NVAPI guard + process binding) ---------------
 let bindings = [];
 let monitorInterval = null;
-let nvapiPollInterval = null;
 let currentActivePreset = null;
 let preBindPreset = null;
 let bindEnabled = true;
@@ -281,95 +311,150 @@ let bindEnabled = true;
 let lastDVC = 50;
 let lastHUE = 0;
 let lastGammaParams = null;
+let tickCount = 0;
 
-// Periodic NVAPI poll: ensure driver values stay correct (every 3 seconds)
-function startNvapiPoll() {
-  if (nvapiPollInterval) clearInterval(nvapiPollInterval);
-  nvapiPollInterval = setInterval(() => {
-    if (!nvapiReady) return;
-    try {
-      const dvcInfo = getDVC();
-      const hueInfo = getHUE();
-      if (dvcInfo && dvcInfo.current !== lastDVC) {
-        setDVC(lastDVC);
-        if (win) win.webContents.send('status', 'NVAPI 守护: DVC 已纠正 (' + dvcInfo.current + ' → ' + lastDVC + ')');
+// Get ALL running process names & PIDs in one call (avoids per-binding tasklist spam)
+function getAllProcs() {
+  try {
+    const out = execSync('tasklist /fo csv /nh', { encoding: 'utf-8', timeout: 1500 });
+    const procs = {};
+    const lines = out.split('\n');
+    for (const line of lines) {
+      const m = line.match(/^"([^"]+\.exe)","(\d+)"/i);
+      if (m) {
+        const name = m[1].toLowerCase();
+        const pid = parseInt(m[2]);
+        if (!procs[name]) procs[name] = [];
+        procs[name].push(pid);
       }
-      if (hueInfo && hueInfo.current !== lastHUE) {
-        setHUE(lastHUE);
-        if (win) win.webContents.send('status', 'NVAPI 守护: HUE 已纠正 (' + hueInfo.current + '° → ' + lastHUE + '°)');
-      }
-      // Re-apply gamma if any app overwrote it
-      if (lastGammaParams && GetDeviceGammaRamp) {
-        const hDC = GetDC(null);
-        const curRamp = {};
-        GetDeviceGammaRamp(hDC, curRamp);
-        ReleaseDC(null, hDC);
-        // Quick check: compare midpoint value to detect drift
-        if (curRamp.Red && curRamp.Red[128] !== undefined) {
-          const expected = buildGdiRamp(lastGammaParams.rg, lastGammaParams.rb, lastGammaParams.rc);
-          if (Math.abs(curRamp.Red[128] - expected[128]) > 500) {
-            applyGamma(lastGammaParams.rg, lastGammaParams.rb, lastGammaParams.rc,
-                       lastGammaParams.gg, lastGammaParams.gb, lastGammaParams.gc,
-                       lastGammaParams.bg, lastGammaParams.bb, lastGammaParams.bc);
-            if (win) win.webContents.send('status', 'NVAPI 守护: Gamma 已纠正');
-          }
-        }
-      }
-    } catch(e) { /* silent */ }
-  }, 3000);
+    }
+    return procs;
+  } catch (e) { return {}; }
 }
 
+// NVAPI drift guard (runs every tick)
+function nvapiGuardTick() {
+  if (!nvapiReady) return;
+  try {
+    const dvcInfo = getDVC();
+    const hueInfo = getHUE();
+    if (dvcInfo && dvcInfo.current !== lastDVC) {
+      setDVC(lastDVC);
+      if (win) win.webContents.send('status', 'NVAPI 守护: DVC 已纠正 (' + dvcInfo.current + ' → ' + lastDVC + ')');
+    }
+    if (hueInfo && hueInfo.current !== lastHUE) {
+      setHUE(lastHUE);
+      if (win) win.webContents.send('status', 'NVAPI 守护: HUE 已纠正 (' + hueInfo.current + '° → ' + lastHUE + '°)');
+    }
+  } catch(e) { /* silent */ }
+}
+
+// Gamma drift guard (runs every 6th tick ~18s to save cycles)
+function gammaGuardTick() {
+  if (!lastGammaParams || !GetDeviceGammaRamp) return;
+  try {
+    const hDC = GetDC(null);
+    const curRamp = {};
+    GetDeviceGammaRamp(hDC, curRamp);
+    ReleaseDC(null, hDC);
+    if (curRamp.Red && curRamp.Red[128] !== undefined) {
+      const expected = buildGdiRamp(lastGammaParams.rg, lastGammaParams.rb, lastGammaParams.rc);
+      if (Math.abs(curRamp.Red[128] - expected[128]) > 500) {
+        applyGamma(lastGammaParams.rg, lastGammaParams.rb, lastGammaParams.rc,
+                   lastGammaParams.gg, lastGammaParams.gb, lastGammaParams.gc,
+                   lastGammaParams.bg, lastGammaParams.bb, lastGammaParams.bc);
+        if (win) win.webContents.send('status', 'NVAPI 守护: Gamma 已纠正');
+      }
+    }
+  } catch(e) { /* silent */ }
+}
+
+// Helper: apply a binding's preset to hardware
+function applyBindingPreset(b) {
+  const p = loadPresets()[b.presetName];
+  if (!p) return;
+  applyGamma(p.rg, p.rb, p.rc, p.gg, p.gb, p.gc, p.bg, p.bb, p.bc);
+  lastGammaParams = {rg:p.rg, rb:p.rb, rc:p.rc, gg:p.gg, gb:p.gb, gc:p.gc, bg:p.bg, bb:p.bb, bc:p.bc};
+  if (p.dvc !== undefined) { setDVC(p.dvc); lastDVC = p.dvc; }
+  if (p.hue !== undefined) { setHUE(p.hue); lastHUE = p.hue; }
+  currentActivePreset = b.presetName;
+}
+
+// Helper: restore to pre-binding preset
+function restoreToPreBind() {
+  if (preBindPreset) {
+    const prev = loadPresets()[preBindPreset];
+    if (prev) {
+      applyGamma(prev.rg, prev.rb, prev.rc, prev.gg, prev.gb, prev.gc, prev.bg, prev.bb, prev.bc);
+      lastGammaParams = {rg:prev.rg, rb:prev.rb, rc:prev.rc, gg:prev.gg, gb:prev.gb, gc:prev.gc, bg:prev.bg, bb:prev.bb, bc:prev.bc};
+      if (prev.dvc !== undefined) { setDVC(prev.dvc); lastDVC = prev.dvc; }
+      if (prev.hue !== undefined) { setHUE(prev.hue); lastHUE = prev.hue; }
+    }
+    currentActivePreset = preBindPreset;
+  } else {
+    resetGamma();
+    setDVC(50); lastDVC = 50;
+    setHUE(0); lastHUE = 0;
+    lastGammaParams = null;
+    currentActivePreset = null;
+  }
+}
+
+// Single unified monitor — one interval, one tasklist call, handles everything
 function startMonitor() {
   bindings = loadBindings();
   if (monitorInterval) clearInterval(monitorInterval);
-  // Start NVAPI polling
-  startNvapiPoll();
+  tickCount = 0;
   monitorInterval = setInterval(() => {
-    if (!bindEnabled || bindings.length === 0) return;
+    tickCount++;
+    // ① NVAPI drift guard — every tick
+    nvapiGuardTick();
+    // ② Gamma drift guard — every 6th tick (~18s, cheaper than every 3s)
+    if (tickCount % 6 === 0) gammaGuardTick();
+
+    // ③ Process binding monitor — only if bindings exist and enabled
+    const hasBindings = bindEnabled && bindings.length > 0;
+    const hasEnabledBindings = hasBindings && bindings.some(b => b.enabled);
+    if (!hasEnabledBindings) return;
+
+    // Single tasklist call for ALL bindings (was N calls, now 1)
+    const allProcs = getAllProcs();
+    const foregroundPid = getForegroundPid();
+
     for (const b of bindings) {
       if (!b.enabled) continue;
-      const procName = path.basename(b.programPath, '.exe');
-      const isRunning = execSync(`tasklist /fi "imagename eq ${procName}.exe" /fo csv /nh`, { encoding: 'utf-8' })
-        .toLowerCase().includes(procName.toLowerCase());
+      const procKey = path.basename(b.programPath, '.exe').toLowerCase() + '.exe';
+      const pids = allProcs[procKey] || [];
+      const isRunning = pids.length > 0;
+      const isForeground = isRunning && pids.includes(foregroundPid);
+
       if (isRunning && !b.wasActive) {
-        // Only capture restore target for the FIRST binding that fires
         if (preBindPreset === null) preBindPreset = currentActivePreset;
-        const p = loadPresets()[b.presetName];
-        if (p) {
-          applyGamma(p.rg, p.rb, p.rc, p.gg, p.gb, p.gc, p.bg, p.bb, p.bc);
-          lastGammaParams = {rg:p.rg, rb:p.rb, rc:p.rc, gg:p.gg, gb:p.gb, gc:p.gc, bg:p.bg, bb:p.bb, bc:p.bc};
-          if (p.dvc !== undefined) { setDVC(p.dvc); lastDVC = p.dvc; }
-          if (p.hue !== undefined) { setHUE(p.hue); lastHUE = p.hue; }
-        }
-        currentActivePreset = b.presetName;
+        applyBindingPreset(b);
+        b.wasActive = true;
+        b.wasForeground = isForeground;
         if (win) win.webContents.send('status', `程序绑定: ${b.programName} 启动 → ${b.presetName}`);
       } else if (!isRunning && b.wasActive) {
         b.wasActive = false;
-        let otherActive = bindings.some(bb => bb !== b && bb.wasActive);
-        if (!otherActive) {
-          if (preBindPreset) {
-            const prev = loadPresets()[preBindPreset];
-            if (prev) {
-              applyGamma(prev.rg, prev.rb, prev.rc, prev.gg, prev.gb, prev.gc, prev.bg, prev.bb, prev.bc);
-              lastGammaParams = {rg:prev.rg, rb:prev.rb, rc:prev.rc, gg:prev.gg, gb:prev.gb, gc:prev.gc, bg:prev.bg, bb:prev.bb, bc:prev.bc};
-              if (prev.dvc !== undefined) { setDVC(prev.dvc); lastDVC = prev.dvc; }
-              if (prev.hue !== undefined) { setHUE(prev.hue); lastHUE = prev.hue; }
-            }
-            currentActivePreset = preBindPreset;
-            preBindPreset = null;
-          } else {
-            resetGamma();
-            setDVC(50); lastDVC = 50;
-            setHUE(0); lastHUE = 0;
-            lastGammaParams = null;
-            currentActivePreset = null;
-          }
-          if (win) win.webContents.send('status', '程序绑定: 已恢复');
+        b.wasForeground = false;
+        if (!bindings.some(bb => bb !== b && bb.wasActive)) {
+          restoreToPreBind();
+          preBindPreset = null;
+          if (win) win.webContents.send('status', '程序绑定: 进程退出，已恢复');
+        }
+      } else if (isRunning && b.wasActive) {
+        if (isForeground && !b.wasForeground) {
+          applyBindingPreset(b);
+          b.wasForeground = true;
+          if (win) win.webContents.send('status', `程序绑定: ${b.programName} 前台 → ${b.presetName}`);
+        } else if (!isForeground && b.wasForeground) {
+          restoreToPreBind();
+          b.wasForeground = false;
+          if (win) win.webContents.send('status', `程序绑定: ${b.programName} 后台 → 已恢复`);
         }
       }
-      if (isRunning) { b.wasActive = true; }
     }
-  }, 2000);
+  }, 3000);
 }
 
 // --------------- Window & Tray ---------------
@@ -536,7 +621,6 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {});
 app.on('before-quit', () => {
   clearInterval(monitorInterval);
-  clearInterval(nvapiPollInterval);
   resetGamma();
   setDVC(50);
   setHUE(0);
