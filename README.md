@@ -148,8 +148,3 @@ npm run build     # portable .exe
 
 MIT — see [LICENSE](LICENSE)
 
-## 🙏 Acknowledgments
-
-- [koffi](https://koffi.dev/) — Pure JavaScript FFI for Node.js
-- NVIDIA NVAPI SDK documentation (C header reverse-engineering)
-- The Electron team
