@@ -1,4 +1,19 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog } = require('electron');
+
+// 单实例锁 — 必须在最前面
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+  process.exit(0);
+}
+app.on('second-instance', () => {
+  if (win) {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  }
+});
+
 const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
@@ -15,6 +30,8 @@ let nvapiReady = false;
 let nvDispHandle = null;   // External: NvDisplayHandle for DVC/HUE calls
 let NvAPI_GetDVCInfo, NvAPI_SetDVCLevel, NvAPI_GetHUEInfo, NvAPI_SetHUEAngle;
 
+// NVAPI+GDI32 延迟初始化（加速启动）
+function initHardware() {
 if (koffi) {
   // ---- GDI32 Gamma Ramp (always available) ----
   try {
@@ -121,6 +138,7 @@ if (koffi) {
     console.warn('[NVAPI] Load error:', e.message);
   }
 }
+} // end initHardware()
 
 // --------------- Gamma Engine (GDI32) ---------------
 // Exact NVIDIA Control Panel ranges → GDI32 gamma ramp
@@ -496,6 +514,9 @@ app.setLoginItemSettings({ openAtLogin: false }); // 默认关闭，用户可选
 app.whenReady().then(() => {
   createWindow();
   createTray();
+  // 窗口先显示，再初始化硬件
+  initHardware();
+  if (win) win.webContents.send('status', nvapiReady ? 'NVAPI 已连接 - 直接控制显卡' : '使用 GDI32 伽马通道（NVAPI 未就绪）');
   startMonitor();
 });
 
