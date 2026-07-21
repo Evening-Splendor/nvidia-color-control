@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('nvidiaAPI', {
   setAutostart: (enabled) => ipcRenderer.invoke('set-autostart', enabled),
   getSetting: (key) => ipcRenderer.invoke('get-setting', key),
   setSetting: (key, value) => ipcRenderer.invoke('set-setting', key, value),
+  getDesktopPreset: () => ipcRenderer.invoke('get-desktop-preset'),
+  setDesktopPreset: (enabled, data) => ipcRenderer.invoke('set-desktop-preset', enabled, data),
   notifyActivePreset: (name) => ipcRenderer.invoke('set-active-preset', name),
   onStatus: (cb) => ipcRenderer.on('status', (_, msg) => cb(msg)),
   onApplyPreset: (cb) => ipcRenderer.on('apply-preset', (_, name) => cb(name)),

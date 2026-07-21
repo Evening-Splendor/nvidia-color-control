@@ -1,6 +1,6 @@
 {
   "name": "nvidia-color-control",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "NVIDIA GPU Color Channel Control - Modern Electron UI",
   "main": "main.js",
   "scripts": {
@@ -36,7 +36,7 @@
     }
   },
   "devDependencies": {
-    "electron": "^33.0.0",
+    "electron": "^33.4.11",
     "electron-builder": "^26.15.3"
   },
   "dependencies": {

@@ -7,18 +7,18 @@ var activeChannel = 'all'; // 'all' | 'red' | 'green' | 'blue'
 
 // All 9 internal channel values + DVC + HUE (exact NVIDIA Control Panel ranges)
 var ch = {
-  rg:1.0, rb:100, rc:100,
-  gg:1.0, gb:100, gc:100,
-  bg:1.0, bb:100, bc:100,
+  rg:1.0, rb:50, rc:50,
+  gg:1.0, gb:50, gc:50,
+  bg:1.0, bb:50, bc:50,
   dvc: 50, hue: 0,
 };
 
 var sliderDefs = {
   gamma: { min: 0.30, max: 2.80, step: 0.01, def: 1.00, decimals: 2, label: '灰度 Gamma' },
-  bri:   { min: 80, max: 120, step: 1, def: 100, decimals: 0, label: '亮度 Brightness' },
-  con:   { min: 80, max: 120, step: 1, def: 100, decimals: 0, label: '对比度 Contrast' },
-  dvc:   { min: 0, max: 100, step: 1, def: 50, decimals: 0, label: '数字亮丽 DVC' },
-  hue:   { min: 0, max: 359, step: 1, def: 0, decimals: 0, label: '色调 Hue' },
+  bri:   { min: 0, max: 100, step: 1, def: 50, decimals: 0, label: '亮度 Brightness' },
+  con:   { min: 0, max: 100, step: 1, def: 50, decimals: 0, label: '对比度 Contrast' },
+  dvc:   { min: 0, max: 100, step: 1, def: 50, decimals: 0, label: '数字颜色格式 DVC' },
+  hue:   { min: 0, max: 355, step: 1, def: 0, decimals: 0, label: '色调 Hue' },
 };
 
 // ==================== Init ====================
@@ -58,6 +58,9 @@ async function init() {
     document.getElementById('autostart-chk').checked = autoOn;
     var trayOn = await nvidiaAPI.getSetting('minimizeToTray');
     document.getElementById('tray-chk').checked = trayOn;
+    var fgOn = await nvidiaAPI.getSetting('foregroundDetect');
+    document.getElementById('foreground-chk').checked = fgOn;
+    await loadDesktopPresetState();
   } catch(e) {}
 
   setStatus(nvapiReady ? 'NVAPI 已连接 - 直接控制显卡' : '使用 GDI32 伽马通道（NVAPI 未就绪）');
@@ -76,6 +79,60 @@ async function toggleMinimizeToTray() {
   await nvidiaAPI.setSetting('minimizeToTray', chk.checked);
   var st = document.getElementById('settings-status');
   if (st) st.textContent = chk.checked ? '关闭窗口将最小化到托盘' : '关闭窗口将退出程序';
+}
+
+async function toggleForegroundDetect() {
+  var chk = document.getElementById('foreground-chk');
+  await nvidiaAPI.setSetting('foregroundDetect', chk.checked);
+  var st = document.getElementById('settings-status');
+  if (st) st.textContent = chk.checked ? '前台检测已启用' : '前台检测已关闭';
+}
+
+function refreshDesktopPresetSelect() {
+  var sel = document.getElementById('desktop-preset-select');
+  if (!sel) return;
+  sel.innerHTML = '';
+  var keys = Object.keys(presets);
+  for (var i = 0; i < keys.length; i++) {
+    var opt = document.createElement('option');
+    opt.value = keys[i];
+    opt.textContent = keys[i];
+    sel.appendChild(opt);
+  }
+}
+
+async function loadDesktopPresetState() {
+  try {
+    var dp = await nvidiaAPI.getDesktopPreset();
+    var chk = document.getElementById('desktop-chk');
+    if (chk) chk.checked = dp.enabled;
+    var sel = document.getElementById('desktop-preset-select');
+    if (sel && dp.name) sel.value = dp.name;
+  } catch(e) {}
+}
+
+async function toggleDesktopPreset() {
+  var chk = document.getElementById('desktop-chk');
+  var sel = document.getElementById('desktop-preset-select');
+  var name = sel ? sel.value : null;
+  if (chk.checked && name) {
+    await nvidiaAPI.setDesktopPreset(true, name);
+    setStatus('桌面预设已启用: ' + name);
+  } else {
+    await nvidiaAPI.setDesktopPreset(false, null);
+    setStatus('桌面预设已关闭');
+  }
+}
+
+async function onDesktopPresetSelect() {
+  var chk = document.getElementById('desktop-chk');
+  if (chk && chk.checked) {
+    var sel = document.getElementById('desktop-preset-select');
+    if (sel) {
+      await nvidiaAPI.setDesktopPreset(true, sel.value);
+      setStatus('桌面预设切换: ' + sel.value);
+    }
+  }
 }
 
 // ==================== Channel Selector ====================
@@ -256,7 +313,7 @@ async function applyPreset() {
 }
 
 async function resetAll() {
-  ch = { rg:1, rb:100, rc:100, gg:1, gb:100, gc:100, bg:1, bb:100, bc:100, dvc:50, hue:0 };
+  ch = { rg:1, rb:50, rc:50, gg:1, gb:50, gc:50, bg:1, bb:50, bc:50, dvc:50, hue:0 };
   updateSlidersForChannel();
   updateChannelPreview();
   await nvidiaAPI.resetGamma();
@@ -269,7 +326,7 @@ async function resetAll() {
 }
 
 function setAllDefaults() {
-  ch = { rg:1, rb:100, rc:100, gg:1, gb:100, gc:100, bg:1, bb:100, bc:100, dvc:50, hue:0 };
+  ch = { rg:1, rb:50, rc:50, gg:1, gb:50, gc:50, bg:1, bb:50, bc:50, dvc:50, hue:0 };
   currentPreset = 'default';
   nvidiaAPI.notifyActivePreset('default');
   updateSlidersForChannel();
@@ -306,7 +363,7 @@ async function doSavePreset() {
 async function deletePreset() {
   var name = document.getElementById('preset-select').value;
   if (!name) return;
-  if (presets[name] && presets[name].builtIn) { alert('不能删除内置方案'); return; }
+  if (name === 'default') { alert('不能删除默认方案'); return; }
   if (!confirm('确定删除方案 "' + name + '"？')) return;
   presets = await nvidiaAPI.deletePreset(name);
   refreshPresetSelect();
@@ -321,13 +378,13 @@ function refreshPresetSelect() {
   var keys = Object.keys(presets);
   for (var i = 0; i < keys.length; i++) {
     var k = keys[i], v = presets[k];
-    var tag = v.builtIn ? '[内置]' : '[自定义]';
     var opt = document.createElement('option');
     opt.value = k;
-    opt.textContent = tag + ' ' + k + ' - ' + v.desc;
+    opt.textContent = k + ' - ' + v.desc;
     sel.appendChild(opt);
   }
   if (sel.options.length > 0) sel.selectedIndex = 0;
+  refreshDesktopPresetSelect();
 }
 
 function refreshBindPresetSelect() {
@@ -341,6 +398,7 @@ function refreshBindPresetSelect() {
     opt.textContent = keys[i];
     sel.appendChild(opt);
   }
+  refreshDesktopPresetSelect();
 }
 
 function setStatus(msg) {

@@ -51,11 +51,11 @@
 
   .main-content {
     height: calc(100vh - 38px); display: flex; flex-direction: column;
-    overflow-y: auto; padding: 16px 20px; -webkit-app-region: no-drag;
+    overflow-y: auto; padding: 12px 16px; -webkit-app-region: no-drag;
   }
 
   .tabs {
-    display: flex; gap: 2px; margin-bottom: 16px;
+    display: flex; gap: 2px; margin-bottom: 10px;
     background: var(--surface2); border-radius: var(--radius); padding: 3px;
   }
   .tab {
@@ -65,7 +65,7 @@
   }
   .tab.active { background: var(--surface3); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
   .tab:hover:not(.active) { color: var(--text); }
-  .tab-content { display: none; flex: 1; flex-direction: column; gap: 12px; }
+  .tab-content { display: none; flex: 1; flex-direction: column; gap: 8px; }
   .tab-content.active { display: flex; }
 
   .channel-selector {
@@ -73,7 +73,7 @@
     border-radius: var(--radius); padding: 3px;
   }
   .ch-btn {
-    flex: 1; padding: 10px 8px; text-align: center; font-size: 13px;
+    flex: 1; padding: 7px 6px; text-align: center; font-size: 13px;
     font-weight: 500; border-radius: var(--radius-sm); cursor: pointer;
     transition: var(--transition); color: var(--text2);
     border: none; background: none; font-family: inherit;
@@ -89,12 +89,12 @@
 
   .card {
     background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 20px;
+    border-radius: var(--radius); padding: 14px;
   }
   .slider-group {
     display: grid;
     grid-template-columns: 100px 1fr 55px 42px;
-    align-items: center; gap: 10px; padding: 7px 0;
+    align-items: center; gap: 8px; padding: 4px 0;
   }
   .slider-group .label { font-size: 13px; color: var(--text2); font-weight: 500; }
   .slider-group .value {
@@ -147,7 +147,7 @@
   .btn.sm { padding: 3px 8px; font-size: 11px; }
   .btn-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 
-  .preset-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .preset-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   select {
     background: var(--surface2); color: var(--text);
     border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -229,12 +229,12 @@
     <div class="preset-row">
       <select id="preset-select" onchange="onPresetSelect()"></select>
       <button class="btn primary" onclick="applyPreset()">应用</button>
-      <button class="btn" onclick="showSaveModal()">💾 保存方案</button>
-      <button class="btn danger" onclick="deletePreset()">删除</button>
-      <button class="btn" onclick="resetAll()">↺ 恢复默认</button>
+      <button class="btn sm" onclick="showSaveModal()">保存</button>
+      <button class="btn sm danger" onclick="deletePreset()">删除</button>
+      <button class="btn sm" onclick="resetAll()">默认</button>
       <div class="checkbox-row" style="margin-left:auto">
         <input type="checkbox" id="realtime" checked>
-        <span>实时预览</span>
+        <span>实时</span>
       </div>
     </div>
 
@@ -248,14 +248,14 @@
     <div class="card" id="slider-card">
       <div class="slider-group">
         <span class="label">亮度 Brightness</span>
-        <input type="range" class="slider-all" id="slider-bri" min="80" max="120" step="1" value="100" oninput="onSlider('bri')">
-        <span class="value" id="val-bri">100</span>
+        <input type="range" class="slider-all" id="slider-bri" min="0" max="100" step="1" value="50" oninput="onSlider('bri')">
+        <span class="value" id="val-bri">50</span>
         <button class="btn sm" onclick="resetSlider('bri')">归零</button>
       </div>
       <div class="slider-group">
         <span class="label">对比度 Contrast</span>
-        <input type="range" class="slider-all" id="slider-con" min="80" max="120" step="1" value="100" oninput="onSlider('con')">
-        <span class="value" id="val-con">100</span>
+        <input type="range" class="slider-all" id="slider-con" min="0" max="100" step="1" value="50" oninput="onSlider('con')">
+        <span class="value" id="val-con">50</span>
         <button class="btn sm" onclick="resetSlider('con')">归零</button>
       </div>
       <div class="slider-group">
@@ -265,22 +265,22 @@
         <button class="btn sm" onclick="resetSlider('gamma')">归零</button>
       </div>
       <div class="slider-group">
-        <span class="label">数字亮丽 DVC</span>
+        <span class="label">数字颜色格式 DVC</span>
         <input type="range" class="slider-all" id="slider-dvc" min="0" max="100" step="1" value="50" oninput="onSlider('dvc')">
         <span class="value" id="val-dvc">50%</span>
         <button class="btn sm" onclick="resetSlider('dvc')">归零</button>
       </div>
       <div class="slider-group">
         <span class="label">色调 Hue</span>
-        <input type="range" class="slider-all" id="slider-hue" min="0" max="359" step="1" value="0" oninput="onSlider('hue')">
+        <input type="range" class="slider-all" id="slider-hue" min="0" max="355" step="1" value="0" oninput="onSlider('hue')">
         <span class="value" id="val-hue">0°</span>
         <button class="btn sm" onclick="resetSlider('hue')">归零</button>
       </div>
 
       <div class="ch-preview">
-        <div class="ch-pv"><span>🔴 红</span><div class="pv-val red" id="pv-red">1.00 / 100 / 100</div></div>
-        <div class="ch-pv"><span>🟢 绿</span><div class="pv-val green" id="pv-green">1.00 / 100 / 100</div></div>
-        <div class="ch-pv"><span>🔵 蓝</span><div class="pv-val blue" id="pv-blue">1.00 / 100 / 100</div></div>
+        <div class="ch-pv"><span>🔴 红</span><div class="pv-val red" id="pv-red">1.00 / 50 / 50</div></div>
+        <div class="ch-pv"><span>🟢 绿</span><div class="pv-val green" id="pv-green">1.00 / 50 / 50</div></div>
+        <div class="ch-pv"><span>🔵 蓝</span><div class="pv-val blue" id="pv-blue">1.00 / 50 / 50</div></div>
       </div>
     </div>
   </div>
@@ -324,6 +324,23 @@
           <span class="setting-desc">关闭窗口时最小化到托盘而不是退出程序</span>
         </div>
         <input type="checkbox" id="tray-chk" checked onchange="toggleMinimizeToTray()">
+      </div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-label">前台检测</span>
+          <span class="setting-desc">检测前台程序切换，仅在程序位于前台时应用绑定预设</span>
+        </div>
+        <input type="checkbox" id="foreground-chk" checked onchange="toggleForegroundDetect()">
+      </div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-label">桌面预设</span>
+          <span class="setting-desc">切换到桌面时自动应用选中的预设</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" id="desktop-chk" onchange="toggleDesktopPreset()">
+          <select id="desktop-preset-select" onchange="onDesktopPresetSelect()" style="min-width:100px"></select>
+        </div>
       </div>
     </div>
     <div class="status-bar" style="margin-top:8px">

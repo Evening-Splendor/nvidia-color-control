@@ -153,11 +153,11 @@ if (koffi) {
 
 // --------------- Gamma Engine (GDI32) ---------------
 // Exact NVIDIA Control Panel ranges → GDI32 gamma ramp
-// brightness: 80-120 (100=neutral), contrast: 80-120 (100=neutral), gamma: 0.30-2.80 (1.00=neutral)
+// brightness: 0-100 (50=neutral), contrast: 0-100 (50=neutral), gamma: 0.30-2.80 (1.00=neutral)
 function buildGdiRamp(gamma, brightness, contrast) {
   const g = clamp(gamma, 0.30, 2.80);
-  const bOff = (clamp(brightness, 80, 120) - 100) / 100;  // -0.20 to +0.20
-  const cGain = clamp(contrast, 80, 120) / 100;            // 0.80 to 1.20
+  const bOff = (clamp(brightness, 0, 100) - 50) / 100;  // -0.50 to +0.50
+  const cGain = clamp(contrast, 0, 100) / 50;            // 0.00 to 2.00
   const arr = new Uint16Array(256);
   for (let i = 0; i < 256; i++) {
     let v = Math.pow(i / 255, 1.0 / g) * cGain + bOff;
@@ -250,29 +250,29 @@ const dataDir = app.getPath('userData');
 const presetsPath = path.join(dataDir, 'presets.json');
 const bindingsPath = path.join(dataDir, 'bindings.json');
 
-const builtInPresets = {
-  default: { name:'default', desc:'默认设置',     rg:1.00,gg:1.00,bg:1.00, rb:100,gb:100,bb:100, rc:100,gc:100,bc:100, dvc:50, hue:0,  builtIn:true },
-  warm:    { name:'warm',    desc:'暖色护眼',     rg:1.00,gg:0.95,bg:0.85, rb:105,gb:100,bb:95,  rc:102,gc:100,bc:98,  dvc:45, hue:5,  builtIn:true },
-  cool:    { name:'cool',    desc:'冷色调',       rg:0.90,gg:0.95,bg:1.00, rb:95, gb:100,bb:105, rc:98, gc:100,bc:102, dvc:50, hue:0,  builtIn:true },
-  game:    { name:'game',    desc:'游戏模式',     rg:1.00,gg:1.00,bg:1.00, rb:105,gb:105,bb:105, rc:108,gc:108,bc:108, dvc:65, hue:0,  builtIn:true },
-  movie:   { name:'movie',   desc:'观影模式',     rg:0.90,gg:0.90,bg:0.90, rb:102,gb:102,bb:102, rc:105,gc:105,bc:105, dvc:55, hue:0,  builtIn:true },
-  read:    { name:'read',    desc:'阅读模式',     rg:0.85,gg:0.85,bg:0.85, rb:110,gb:110,bb:110, rc:90, gc:90, bc:90,  dvc:30, hue:10, builtIn:true },
-  vivid:   { name:'vivid',   desc:'鲜艳模式',     rg:1.00,gg:1.00,bg:1.00, rb:100,gb:100,bb:100, rc:115,gc:115,bc:115, dvc:80, hue:0,  builtIn:true },
-  night:   { name:'night',   desc:'夜间模式',     rg:0.70,gg:0.70,bg:0.75, rb:95, gb:95, bb:95,  rc:85, gc:85, bc:88,  dvc:20, hue:0,  builtIn:true },
+const defaultPreset = {
+  name:'default', desc:'默认设置',
+  rg:1.00,gg:1.00,bg:1.00,
+  rb:50,gb:50,bb:50,
+  rc:50,gc:50,bc:50,
+  dvc:50, hue:0,
 };
 
 function loadPresets() {
-  const all = Object.assign({}, builtInPresets);
+  const all = {};
+  // Always include the default preset
+  all['default'] = { ...defaultPreset };
   if (fs.existsSync(presetsPath)) {
     try {
       const custom = JSON.parse(fs.readFileSync(presetsPath, 'utf-8'));
-      for (const [k, v] of Object.entries(custom)) all[k] = { ...v, builtIn: false };
+      for (const [k, v] of Object.entries(custom)) all[k] = { ...v };
     } catch {}
   }
   return all;
 }
 
 function saveCustomPreset(name, preset) {
+  if (name === 'default') return; // Cannot overwrite default
   let custom = {};
   if (fs.existsSync(presetsPath)) {
     try { custom = JSON.parse(fs.readFileSync(presetsPath, 'utf-8')); } catch {}
@@ -282,6 +282,7 @@ function saveCustomPreset(name, preset) {
 }
 
 function deleteCustomPreset(name) {
+  if (name === 'default') return; // Cannot delete default
   if (!fs.existsSync(presetsPath)) return;
   let custom = JSON.parse(fs.readFileSync(presetsPath, 'utf-8'));
   delete custom[name];
@@ -306,6 +307,23 @@ let monitorInterval = null;
 let currentActivePreset = null;
 let preBindPreset = null;
 let bindEnabled = true;
+let foregroundDetectEnabled = true;
+
+// Desktop preset
+let desktopPresetEnabled = false;
+let desktopPresetName = null;   // preset name to look up
+let desktopPresetActive = false; // currently applied
+const desktopPresetPath = path.join(dataDir, 'desktop-preset.json');
+
+function loadDesktopPreset() {
+  if (fs.existsSync(desktopPresetPath)) {
+    try {
+      const saved = JSON.parse(fs.readFileSync(desktopPresetPath, 'utf-8'));
+      desktopPresetEnabled = saved.enabled || false;
+      desktopPresetName = saved.name || null;
+    } catch {}
+  }
+}
 
 // Track last-applied NVAPI values for drift detection
 let lastDVC = 50;
@@ -380,7 +398,7 @@ function applyBindingPreset(b) {
   currentActivePreset = b.presetName;
 }
 
-// Helper: restore to pre-binding preset
+// Helper: restore to pre-binding preset (or fallback to hardware defaults)
 function restoreToPreBind() {
   if (preBindPreset) {
     const prev = loadPresets()[preBindPreset];
@@ -400,11 +418,24 @@ function restoreToPreBind() {
   }
 }
 
+// Apply a preset by name (used by desktop preset)
+function applyPresetByName(name) {
+  const p = loadPresets()[name];
+  if (!p) return false;
+  applyGamma(p.rg, p.rb, p.rc, p.gg, p.gb, p.gc, p.bg, p.bb, p.bc);
+  lastGammaParams = {rg:p.rg, rb:p.rb, rc:p.rc, gg:p.gg, gb:p.gb, gc:p.gc, bg:p.bg, bb:p.bb, bc:p.bc};
+  if (p.dvc !== undefined) { setDVC(p.dvc); lastDVC = p.dvc; }
+  if (p.hue !== undefined) { setHUE(p.hue); lastHUE = p.hue; }
+  currentActivePreset = name;
+  return true;
+}
+
 // Single unified monitor — one interval, one tasklist call, handles everything
 function startMonitor() {
   bindings = loadBindings();
   if (monitorInterval) clearInterval(monitorInterval);
   tickCount = 0;
+  desktopPresetActive = false;
   monitorInterval = setInterval(() => {
     tickCount++;
     // ① NVAPI drift guard — every tick
@@ -412,47 +443,68 @@ function startMonitor() {
     // ② Gamma drift guard — every 6th tick (~18s, cheaper than every 3s)
     if (tickCount % 6 === 0) gammaGuardTick();
 
-    // ③ Process binding monitor — only if bindings exist and enabled
-    const hasBindings = bindEnabled && bindings.length > 0;
-    const hasEnabledBindings = hasBindings && bindings.some(b => b.enabled);
-    if (!hasEnabledBindings) return;
+    // ③ Process binding monitor
+    const hasEnabledBindings = bindEnabled && bindings.some(b => b.enabled);
 
-    // Single tasklist call for ALL bindings (was N calls, now 1)
-    const allProcs = getAllProcs();
-    const foregroundPid = getForegroundPid();
+    let allProcs = null, foregroundPid = 0;
 
-    for (const b of bindings) {
-      if (!b.enabled) continue;
-      const procKey = path.basename(b.programPath, '.exe').toLowerCase() + '.exe';
-      const pids = allProcs[procKey] || [];
-      const isRunning = pids.length > 0;
-      const isForeground = isRunning && pids.includes(foregroundPid);
+    if (hasEnabledBindings) {
+      // Single tasklist call for ALL bindings
+      allProcs = getAllProcs();
+      foregroundPid = getForegroundPid();
 
-      if (isRunning && !b.wasActive) {
-        if (preBindPreset === null) preBindPreset = currentActivePreset;
-        applyBindingPreset(b);
-        b.wasActive = true;
-        b.wasForeground = isForeground;
-        if (win) win.webContents.send('status', `程序绑定: ${b.programName} 启动 → ${b.presetName}`);
-      } else if (!isRunning && b.wasActive) {
-        b.wasActive = false;
-        b.wasForeground = false;
-        if (!bindings.some(bb => bb !== b && bb.wasActive)) {
-          restoreToPreBind();
-          preBindPreset = null;
-          if (win) win.webContents.send('status', '程序绑定: 进程退出，已恢复');
-        }
-      } else if (isRunning && b.wasActive) {
-        if (isForeground && !b.wasForeground) {
+      for (const b of bindings) {
+        if (!b.enabled) continue;
+        const procKey = path.basename(b.programPath, '.exe').toLowerCase() + '.exe';
+        const pids = allProcs[procKey] || [];
+        const isRunning = pids.length > 0;
+        const isForeground = foregroundDetectEnabled ? (isRunning && pids.includes(foregroundPid)) : isRunning;
+
+        if (isRunning && !b.wasActive) {
+          if (preBindPreset === null) preBindPreset = currentActivePreset;
           applyBindingPreset(b);
-          b.wasForeground = true;
-          if (win) win.webContents.send('status', `程序绑定: ${b.programName} 前台 → ${b.presetName}`);
-        } else if (!isForeground && b.wasForeground) {
-          restoreToPreBind();
+          b.wasActive = true;
+          b.wasForeground = isForeground;
+          if (win) win.webContents.send('status', `程序绑定: ${b.programName} 启动 → ${b.presetName}`);
+        } else if (!isRunning && b.wasActive) {
+          b.wasActive = false;
           b.wasForeground = false;
-          if (win) win.webContents.send('status', `程序绑定: ${b.programName} 后台 → 已恢复`);
+          if (!bindings.some(bb => bb !== b && bb.wasActive)) {
+            restoreToPreBind();
+            preBindPreset = null;
+            if (win) win.webContents.send('status', '程序绑定: 进程退出，已恢复');
+          }
+        } else if (isRunning && b.wasActive) {
+          if (isForeground && !b.wasForeground) {
+            applyBindingPreset(b);
+            b.wasForeground = true;
+            if (win) win.webContents.send('status', `程序绑定: ${b.programName} 前台 → ${b.presetName}`);
+          } else if (!isForeground && b.wasForeground) {
+            restoreToPreBind();
+            b.wasForeground = false;
+            if (win) win.webContents.send('status', `程序绑定: ${b.programName} 后台 → 已恢复`);
+          }
         }
       }
+    }
+
+    // ④ Desktop preset — apply when no bound app is foreground-active
+    let anyBindingForeground = false;
+    if (hasEnabledBindings) {
+      anyBindingForeground = bindings.some(b => b.enabled && (
+        foregroundDetectEnabled ? b.wasForeground : b.wasActive
+      ));
+    }
+
+    if (desktopPresetEnabled && desktopPresetName && !anyBindingForeground) {
+      if (!desktopPresetActive) {
+        if (applyPresetByName(desktopPresetName)) {
+          desktopPresetActive = true;
+          if (win) win.webContents.send('status', '桌面预设: ' + desktopPresetName);
+        }
+      }
+    } else {
+      desktopPresetActive = false;
     }
   }, 3000);
 }
@@ -466,9 +518,9 @@ function createWindow() {
   const appIcon = nativeImage.createFromPath(iconPath);
   win = new BrowserWindow({
     width: 720,
-    height: 680,
+    height: 620,
     minWidth: 650,
-    minHeight: 620,
+    minHeight: 560,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
@@ -498,20 +550,6 @@ function createTray() {
   const menu = Menu.buildFromTemplate([
     { label: '显示主窗口', click: () => { win.show(); win.focus(); } },
     { type: 'separator' },
-    { label: '🎮 游戏模式', click: () => {
-      const p = builtInPresets.game;
-      applyGamma(p.rg, p.rb, p.rc, p.gg, p.gb, p.gc, p.bg, p.bb, p.bc);
-      if (p.dvc !== undefined) setDVC(p.dvc);
-      if (p.hue !== undefined) setHUE(p.hue);
-      if (win) win.webContents.send('apply-preset', 'game');
-    }},
-    { label: '🟠 暖色护眼', click: () => {
-      const p = builtInPresets.warm;
-      applyGamma(p.rg, p.rb, p.rc, p.gg, p.gb, p.gc, p.bg, p.bb, p.bc);
-      if (p.dvc !== undefined) setDVC(p.dvc);
-      if (p.hue !== undefined) setHUE(p.hue);
-      if (win) win.webContents.send('apply-preset', 'warm');
-    }},
     { label: '↺ 恢复默认', click: () => { resetGamma(); setDVC(50); setHUE(0); if (win) win.webContents.send('reset'); } },
     { type: 'separator' },
     { label: '退出', click: () => {
@@ -596,18 +634,33 @@ let minimizeToTray = true;
 ipcMain.handle('get-setting', (_, key) => {
   if (key === 'minimizeToTray') return minimizeToTray;
   if (key === 'autostart') return app.getLoginItemSettings().openAtLogin;
+  if (key === 'foregroundDetect') return foregroundDetectEnabled;
   return null;
 });
 ipcMain.handle('set-setting', (_, key, value) => {
   if (key === 'minimizeToTray') { minimizeToTray = !!value; return true; }
   if (key === 'autostart') { app.setLoginItemSettings({ openAtLogin: !!value }); return true; }
+  if (key === 'foregroundDetect') { foregroundDetectEnabled = !!value; return true; }
   return false;
+});
+
+// Desktop preset
+ipcMain.handle('get-desktop-preset', () => {
+  return { enabled: desktopPresetEnabled, name: desktopPresetName };
+});
+ipcMain.handle('set-desktop-preset', (_, enabled, name) => {
+  desktopPresetEnabled = !!enabled;
+  if (name) desktopPresetName = name;
+  desktopPresetActive = false;
+  fs.writeFileSync(desktopPresetPath, JSON.stringify({ enabled: desktopPresetEnabled, name: desktopPresetName }, null, 2));
+  return true;
 });
 
 // --------------- App Lifecycle ---------------
 app.setLoginItemSettings({ openAtLogin: false }); // 默认关闭，用户可选
 
 app.whenReady().then(() => {
+  loadDesktopPreset();
   createWindow();
   createTray();
   // 让出主线程先渲染窗口，再加载 NVAPI/驱动
@@ -615,6 +668,15 @@ app.whenReady().then(() => {
     initHardware();
     if (win) win.webContents.send('status', nvapiReady ? 'NVAPI 已连接 - 直接控制显卡' : '使用 GDI32 伽马通道（NVAPI 未就绪）');
     startMonitor();
+    // Apply desktop preset at startup if enabled
+    if (desktopPresetEnabled && desktopPresetName) {
+      setTimeout(() => {
+        if (applyPresetByName(desktopPresetName)) {
+          desktopPresetActive = true;
+          if (win) win.webContents.send('status', '桌面预设: ' + desktopPresetName);
+        }
+      }, 200);
+    }
   }, 50);
 });
 
